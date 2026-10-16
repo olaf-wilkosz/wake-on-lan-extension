@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Wake on LAN</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+
+    <section id="mainScreen">
+      <header class="topbar">
+        <span class="title">Wake <span class="title-lan">on LAN</span><svg class="title-network-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M12 7.2v4.3M12 11.5 6.4 16.2M12 11.5l5.6 4.7"/></svg></span>
+        <button id="openSettings" class="icon-btn" title="Ustawienia" aria-label="Ustawienia">⚙</button>
+      </header>
+
+      <div id="errorBanner" class="banner banner-error" hidden>
+        <span id="errorBannerText"></span>
+        <button id="errorBannerClose" class="banner-close" aria-label="Zamknij">×</button>
+      </div>
+
+      <div id="toast" class="toast" hidden></div>
+
+      <div id="emptyState" class="empty-state" hidden>
+        <p>Brak skonfigurowanych hostów.</p>
+        <button id="emptyStateOptions" class="btn btn-primary">Otwórz ustawienia</button>
+      </div>
+
+      <section id="defaultHostSection" class="default-card" hidden>
+        <div class="default-card-head">
+          <span class="star">★</span>
+          <span id="defaultHostName" class="host-name"></span>
+        </div>
+        <div class="status-row">
+          <span id="defaultStatusDot" class="status-indicator"></span>
+          <span id="defaultStatusText" class="status-text">Nieznany</span>
+          <span id="defaultLastChecked" class="last-checked"></span>
+        </div>
+        <div id="defaultErrorDetail" class="error-detail" hidden></div>
+        <button id="defaultWakeBtn" class="btn btn-wake-big">Wybudź</button>
+      </section>
+
+      <button id="toggleOthers" class="toggle-others" hidden>
+        Pokaż pozostałe hosty (<span id="otherCount">0</span>)
+      </button>
+
+      <ul id="otherHostsList" class="other-hosts" hidden></ul>
+    </section>
+
+    <section id="settingsScreen" hidden>
+      <header class="topbar">
+        <button id="backToMain" class="icon-btn" title="Wróć" aria-label="Wróć">←</button>
+        <span class="title">Ustawienia</span>
+        <span class="topbar-spacer"></span>
+      </header>
+
+      <div id="settingsBanner" class="banner" hidden></div>
+
+      <div class="settings-scroll">
+        <div class="settings-card">
+          <div class="settings-card-title">Serwer</div>
+          <div class="s-field">
+            <label for="serverUrl">Adres serwera</label>
+            <div class="s-field-row">
+              <input type="text" id="serverUrl" placeholder="http://twoj-serwer.local/">
+              <button id="saveServerUrl" class="btn btn-small-primary">Zapisz</button>
+            </div>
+          </div>
+          <div class="s-field">
+            <label for="pollMinutes">Odpytywanie co (min)</label>
+            <div class="s-field-row">
+              <span class="num-stepper s-input-narrow">
+                <input type="number" id="pollMinutes" min="1" value="5">
+                <span class="num-stepper-btns">
+                  <button type="button" class="num-stepper-btn" data-target="pollMinutes" data-dir="1" aria-label="Zwiększ">▲</button>
+                  <button type="button" class="num-stepper-btn" data-target="pollMinutes" data-dir="-1" aria-label="Zmniejsz">▼</button>
+                </span>
+              </span>
+              <button id="savePollMinutes" class="btn btn-small-primary">Zapisz</button>
+            </div>
+          </div>
+          <button id="importFromServer" class="btn btn-secondary btn-full">Importuj z serwera</button>
+
+          <div id="importPanel" class="import-panel" hidden>
+            <div id="importSummary"></div>
+            <div class="s-field-row">
+              <button id="importConfirm" class="btn btn-small-primary">Zatwierdź import</button>
+              <button id="importCancel" class="btn btn-secondary">Anuluj</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <div class="settings-card-title">Hosty</div>
+          <ul id="settingsHostsList" class="settings-hosts"></ul>
+          <p id="noHostsMsg" class="muted" hidden>Brak hostów. Dodaj pierwszy poniżej.</p>
+
+          <button id="addHostToggle" class="btn btn-secondary btn-full">+ Dodaj hosta</button>
+
+          <form id="hostForm" class="host-form" hidden>
+            <input type="hidden" id="hostId">
+            <div class="s-field">
+              <label for="mac">MAC</label>
+              <input type="text" id="mac" placeholder="AA:BB:CC:DD:EE:FF" required>
+            </div>
+            <div class="s-field">
+              <label for="host">Host / IP</label>
+              <input type="text" id="host" placeholder="192.168.1.10 lub nazwa.hosta" required>
+            </div>
+            <div class="s-field-inline">
+              <div class="s-field">
+                <label for="cidr">CIDR</label>
+                <span class="num-stepper">
+                  <input type="number" id="cidr" min="0" max="32" value="24" required>
+                  <span class="num-stepper-btns">
+                    <button type="button" class="num-stepper-btn" data-target="cidr" data-dir="1" aria-label="Zwiększ">▲</button>
+                    <button type="button" class="num-stepper-btn" data-target="cidr" data-dir="-1" aria-label="Zmniejsz">▼</button>
+                  </span>
+                </span>
+              </div>
+              <div class="s-field">
+                <label for="port">Port</label>
+                <span class="num-stepper">
+                  <input type="number" id="port" min="1" max="65535" value="9" required>
+                  <span class="num-stepper-btns">
+                    <button type="button" class="num-stepper-btn" data-target="port" data-dir="1" aria-label="Zwiększ">▲</button>
+                    <button type="button" class="num-stepper-btn" data-target="port" data-dir="-1" aria-label="Zmniejsz">▼</button>
+                  </span>
+                </span>
+              </div>
+            </div>
+            <div class="s-field">
+              <label for="comment">Komentarz</label>
+              <input type="text" id="comment" placeholder="np. Biurko - PC" required>
+            </div>
+            <div id="formError" class="field-error" hidden></div>
+            <div class="s-field-row">
+              <button type="submit" class="btn btn-small-primary" id="formSubmit">Dodaj hosta</button>
+              <button type="button" class="btn btn-secondary" id="formCancel">Anuluj</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <span class="settings-card-title" style="margin-bottom:0;">Logi błędów</span>
+            <button id="clearErrorLog" class="btn btn-secondary btn-tiny">Wyczyść</button>
+          </div>
+          <ul id="errorLogList" class="error-log-list"></ul>
+          <p id="noErrorLogMsg" class="muted" hidden>Brak błędów.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="shared/api.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

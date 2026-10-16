@@ -1,0 +1,650 @@
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+:root {
+  --bg: #ffffff;
+  --text: #202124;
+  --muted: #5f6368;
+  --faint: #9aa0a6;
+  --divider: #f1f3f4;
+  --hover-bg: #f1f3f4;
+  --accent: #1a73e8;
+  --accent-hover: #1765cc;
+  --accent-grad-from: #4c8dff;
+  --accent-grad-to: #1a73e8;
+  --card-grad-from: #eaf1fe;
+  --card-grad-to: #f5f8ff;
+  --card-border: #cfe0fd;
+  --star: #f4b400;
+  --wake-small-bg: #e8f0fe;
+  --wake-small-bg-hover: #d2e3fc;
+  --wake-small-text: #1a73e8;
+  --dashed-border: #dadce0;
+  --banner-error-bg: #fdecea;
+  --banner-error-text: #c62828;
+  --banner-error-border: #f5c6c2;
+  --toast-bg: #e6f4ea;
+  --toast-text: #1e7e34;
+  --toast-border: #c3e6cb;
+  --status-online: #2e7d32;
+  --status-offline: #c62828;
+  --status-unknown: #9e9e9e;
+  --status-checking: #f9a825;
+  --status-error: #e65100;
+  --set-default-color: #dadce0;
+  --card-bg: #ffffff;
+  --card-plain-border: #e1e5ea;
+  --input-bg: #ffffff;
+  --input-border: #d0d5db;
+  --label-text: #444444;
+  --secondary-bg: #eef1f4;
+  --secondary-bg-hover: #e1e5ea;
+  --secondary-text: #333333;
+  --danger-bg: #fdecea;
+  --danger-bg-hover: #f8d7d5;
+  --danger-text: #c62828;
+  --success-bg: #e6f4ea;
+  --success-text: #1e7e34;
+  --success-border: #c3e6cb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #202124;
+    --text: #e8eaed;
+    --muted: #b8bcc2;
+    --faint: #8a8f96;
+    --divider: #35363a;
+    --hover-bg: #2c2d30;
+    --accent: #6ea8fe;
+    --accent-hover: #8bb8ff;
+    --accent-grad-from: #7fb0ff;
+    --accent-grad-to: #4c8dff;
+    --card-grad-from: #26324a;
+    --card-grad-to: #1b2436;
+    --card-border: #37456a;
+    --star: #f4c542;
+    --wake-small-bg: #26324a;
+    --wake-small-bg-hover: #30405f;
+    --wake-small-text: #9cc2ff;
+    --dashed-border: #46484c;
+    --banner-error-bg: #3a2224;
+    --banner-error-text: #f28b82;
+    --banner-error-border: #5c2b2e;
+    --toast-bg: #1e3a2a;
+    --toast-text: #81c995;
+    --toast-border: #2c5c3e;
+    --status-online: #4caf50;
+    --status-offline: #f28b82;
+    --status-unknown: #8a8f96;
+    --status-checking: #fbbc04;
+    --status-error: #ff8a50;
+    --set-default-color: #5f6368;
+    --card-bg: #232427;
+    --card-plain-border: #34363a;
+    --input-bg: #1b1c1f;
+    --input-border: #45484d;
+    --label-text: #c2c5cb;
+    --secondary-bg: #2c2d30;
+    --secondary-bg-hover: #37383c;
+    --secondary-text: #e8eaed;
+    --danger-bg: #3a2224;
+    --danger-bg-hover: #4a2b2e;
+    --danger-text: #f28b82;
+    --success-bg: #1e3a2a;
+    --success-text: #81c995;
+    --success-border: #2c5c3e;
+  }
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.popup {
+  width: 360px;
+  padding: 12px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.topbar-spacer {
+  width: 28px;
+  display: inline-block;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.title-lan {
+  color: var(--accent);
+}
+
+.title-network-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+  vertical-align: -3px;
+  margin-left: 3px;
+}
+
+.icon-btn {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.icon-btn:hover {
+  background: var(--hover-bg);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.banner-error {
+  background: var(--banner-error-bg);
+  color: var(--banner-error-text);
+  border: 1px solid var(--banner-error-border);
+}
+.banner-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.toast {
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  border: 1px solid var(--toast-border);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 24px 8px;
+}
+.empty-state p {
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.default-card {
+  background: linear-gradient(160deg, var(--card-grad-from), var(--card-grad-to));
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.default-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.star {
+  color: var(--star);
+  font-size: 16px;
+}
+
+.host-name {
+  font-weight: 600;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-online { background: var(--status-online); }
+.status-offline { background: var(--status-offline); }
+.status-unknown { background: var(--status-unknown); }
+.status-checking {
+  background: var(--status-checking);
+  animation: pulse 1s infinite ease-in-out;
+}
+.status-error { background: var(--status-error); }
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.status-indicator svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.status-indicator .bars-online { color: var(--status-online); }
+.status-indicator .bars-offline { color: var(--status-offline); }
+.status-indicator .bar-dim { opacity: 0.28; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.status-text { font-weight: 500; }
+.last-checked { margin-left: auto; font-size: 11px; color: var(--faint); }
+
+.error-detail {
+  font-size: 11px;
+  color: var(--status-error);
+  margin: -6px 0 10px;
+  line-height: 1.4;
+}
+
+.btn {
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn-wake-big {
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  background: linear-gradient(135deg, var(--accent-grad-from), var(--accent-grad-to));
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(26, 115, 232, 0.35);
+}
+.btn-wake-big:hover:not(:disabled) { filter: brightness(1.06); }
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent-grad-from), var(--accent-grad-to));
+  color: #fff;
+  padding: 8px 14px;
+}
+
+.toggle-others {
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: 1px dashed var(--dashed-border);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.toggle-others:hover { background: var(--hover-bg); }
+
+.other-hosts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.other-host-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--divider);
+}
+.other-host-row:last-child { border-bottom: none; }
+
+.other-host-info {
+  flex: 1;
+  min-width: 0;
+}
+.other-host-name {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.other-host-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--faint);
+  margin-top: 2px;
+}
+
+.set-default-btn {
+  background: transparent;
+  border: none;
+  font-size: 15px;
+  cursor: pointer;
+  color: var(--set-default-color);
+  padding: 4px;
+}
+.set-default-btn:hover { color: var(--star); }
+
+.btn-wake-small {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--wake-small-bg);
+  color: var(--wake-small-text);
+}
+.btn-wake-small:hover:not(:disabled) { background: var(--wake-small-bg-hover); }
+
+/* --- Settings screen --- */
+
+.banner-success { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+
+.settings-scroll {
+  max-height: 440px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.settings-card {
+  background: linear-gradient(160deg, var(--card-bg), var(--bg) 220%);
+  border: 1px solid var(--card-plain-border);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.settings-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 10px;
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.btn-tiny {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.error-log-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.error-log-entry {
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--divider);
+  font-size: 12px;
+}
+.error-log-entry:last-child { border-bottom: none; }
+.error-log-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.error-log-time { color: var(--faint); font-size: 11px; }
+.error-log-kind { font-weight: 700; color: var(--status-error); font-size: 11px; }
+.error-log-context { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.error-log-message { margin-top: 3px; color: var(--text); }
+.error-log-raw {
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: 11px;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.s-field {
+  margin-bottom: 8px;
+}
+.s-field label {
+  display: block;
+  font-size: 12px;
+  color: var(--label-text);
+  margin-bottom: 3px;
+}
+.s-field input[type="text"],
+.s-field input[type="number"] {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.s-field-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.s-field-row input { flex: 1; min-width: 0; }
+
+.s-field-inline {
+  display: flex;
+  gap: 8px;
+}
+.s-field-inline .s-field { flex: 1; }
+
+.s-input-narrow { max-width: 90px; }
+
+.btn-small-primary {
+  background: linear-gradient(135deg, var(--accent-grad-from), var(--accent-grad-to));
+  color: #fff;
+  padding: 7px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.btn-small-primary:hover:not(:disabled) { filter: brightness(1.06); }
+
+.btn-secondary {
+  background: var(--secondary-bg);
+  color: var(--secondary-text);
+  padding: 7px 12px;
+  font-size: 12px;
+}
+.btn-secondary:hover:not(:disabled) { background: var(--secondary-bg-hover); }
+
+.btn-danger {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.btn-danger:hover:not(:disabled) { background: var(--danger-bg-hover); }
+
+.btn-full { width: 100%; margin-top: 4px; }
+
+.import-panel {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--dashed-border);
+}
+.import-item { font-size: 12px; margin-bottom: 3px; }
+.import-item.added { color: var(--success-text); }
+.import-item.updated { color: var(--star); }
+
+.settings-hosts {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.settings-host-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--divider);
+}
+.settings-host-row:last-child { border-bottom: none; }
+.settings-host-info {
+  flex: 1;
+  min-width: 0;
+}
+.settings-host-name {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-host-sub {
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.muted { color: var(--faint); font-size: 13px; }
+
+.field-error {
+  color: var(--danger-text);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.host-form {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--dashed-border);
+}
+
+/* --- Ostylowany "spinner" dla input[type=number] zamiast natywnych strzałek --- */
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.num-stepper {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+}
+.s-field-row .num-stepper { flex: 1; min-width: 0; }
+
+.num-stepper input[type="number"] {
+  padding-right: 22px;
+}
+
+.num-stepper-btns {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 18px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--input-border);
+  border-radius: 0 5px 5px 0;
+  overflow: hidden;
+}
+
+.num-stepper-btn {
+  flex: 1;
+  border: none;
+  background: var(--input-bg);
+  color: var(--muted);
+  font-size: 7px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.num-stepper-btn:hover { background: var(--hover-bg); color: var(--text); }
+.num-stepper-btn:active { background: var(--secondary-bg); }
+.num-stepper-btn:first-child { border-bottom: 1px solid var(--input-border); }
+
+/* --- Ostylowany scrollbar dla list z overflow-y: auto --- */
+.other-hosts,
+.settings-scroll,
+.error-log-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dashed-border) transparent;
+}
+.other-hosts::-webkit-scrollbar,
+.settings-scroll::-webkit-scrollbar,
+.error-log-list::-webkit-scrollbar {
+  width: 8px;
+}
+.other-hosts::-webkit-scrollbar-track,
+.settings-scroll::-webkit-scrollbar-track,
+.error-log-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.other-hosts::-webkit-scrollbar-thumb,
+.settings-scroll::-webkit-scrollbar-thumb,
+.error-log-list::-webkit-scrollbar-thumb {
+  background-color: var(--dashed-border);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.other-hosts::-webkit-scrollbar-thumb:hover,
+.settings-scroll::-webkit-scrollbar-thumb:hover,
+.error-log-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
+}
+
+/* --- Płynne rozrastanie się popupu przy przełączaniu ekranów (patrz popup.js) --- */
+.popup {
+  transition: height 0.22s ease;
+  overflow: hidden;
+}

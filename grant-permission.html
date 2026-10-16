@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Wake on LAN — Przyznaj dostęp</title>
+<link rel="stylesheet" href="popup.css">
+<style>
+  body { display: flex; justify-content: center; padding: 40px 16px; }
+  .grant-card {
+    max-width: 420px;
+    width: 100%;
+    background: var(--card-bg, var(--bg));
+    border: 1px solid var(--card-border, var(--divider));
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .grant-card h1 { font-size: 17px; margin: 0 0 12px; }
+  .grant-card p { font-size: 14px; color: var(--muted); line-height: 1.5; margin: 0 0 8px; }
+  .grant-origin {
+    font-family: monospace;
+    font-size: 13px;
+    background: var(--hover-bg);
+    padding: 8px 10px;
+    border-radius: 8px;
+    margin: 12px 0 20px;
+    word-break: break-all;
+  }
+  .grant-actions { display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+  <div class="popup" style="width:auto;padding:0;">
+    <div class="grant-card">
+      <h1>Wake on LAN potrzebuje dostępu</h1>
+      <p>Żeby zapisać ten adres serwera, rozszerzenie potrzebuje Twojej zgody na komunikację z:</p>
+      <div id="originText" class="grant-origin"></div>
+      <div id="statusBanner" class="banner" hidden></div>
+      <div class="grant-actions">
+        <button id="grantBtn" class="btn btn-wake-big" style="flex:1;">Przyznaj dostęp</button>
+        <button id="cancelBtn" class="btn btn-secondary">Anuluj</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="shared/api.js"></script>
+  <script src="grant-permission.js"></script>
+</body>
+</html>
