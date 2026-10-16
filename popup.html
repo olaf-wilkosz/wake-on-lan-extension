@@ -22,7 +22,7 @@
       <div id="toast" class="toast" hidden></div>
 
       <div id="emptyState" class="empty-state" hidden>
-        <p>Brak skonfigurowanych hostów.</p>
+        <p id="emptyStateText">Brak hostów. Wpisz adres serwera w Ustawieniach.</p>
         <button id="emptyStateOptions" class="btn btn-primary">Otwórz ustawienia</button>
       </div>
 
@@ -38,6 +38,11 @@
         </div>
         <div id="defaultErrorDetail" class="error-detail" hidden></div>
         <button id="defaultWakeBtn" class="btn btn-wake-big">Wybudź</button>
+        <div id="defaultConfirm" class="confirm-row" hidden>
+          <span id="defaultConfirmText" class="confirm-text"></span>
+          <button id="defaultConfirmYes" class="btn btn-danger">Tak, uśpij</button>
+          <button id="defaultConfirmNo" class="btn btn-secondary">Anuluj</button>
+        </div>
       </section>
 
       <button id="toggleOthers" class="toggle-others" hidden>
@@ -79,66 +84,17 @@
               <button id="savePollMinutes" class="btn btn-small-primary">Zapisz</button>
             </div>
           </div>
-          <button id="importFromServer" class="btn btn-secondary btn-full">Importuj z serwera</button>
-
-          <div id="importPanel" class="import-panel" hidden>
-            <div id="importSummary"></div>
-            <div class="s-field-row">
-              <button id="importConfirm" class="btn btn-small-primary">Zatwierdź import</button>
-              <button id="importCancel" class="btn btn-secondary">Anuluj</button>
-            </div>
+          <div class="s-field-row">
+            <button id="refreshHosts" class="btn btn-secondary" style="flex:1;">Odśwież listę hostów</button>
+            <button id="openPanel" class="btn btn-secondary" style="flex:1;" title="Dodawanie, edycja i usuwanie hostów odbywa się w panelu serwera">Panel serwera ↗</button>
           </div>
         </div>
 
         <div class="settings-card">
-          <div class="settings-card-title">Hosty</div>
+          <div class="settings-card-title">Hosty z serwera</div>
           <ul id="settingsHostsList" class="settings-hosts"></ul>
-          <p id="noHostsMsg" class="muted" hidden>Brak hostów. Dodaj pierwszy poniżej.</p>
-
-          <button id="addHostToggle" class="btn btn-secondary btn-full">+ Dodaj hosta</button>
-
-          <form id="hostForm" class="host-form" hidden>
-            <input type="hidden" id="hostId">
-            <div class="s-field">
-              <label for="mac">MAC</label>
-              <input type="text" id="mac" placeholder="AA:BB:CC:DD:EE:FF" required>
-            </div>
-            <div class="s-field">
-              <label for="host">Host / IP</label>
-              <input type="text" id="host" placeholder="192.168.1.10 lub nazwa.hosta" required>
-            </div>
-            <div class="s-field-inline">
-              <div class="s-field">
-                <label for="cidr">CIDR</label>
-                <span class="num-stepper">
-                  <input type="number" id="cidr" min="0" max="32" value="24" required>
-                  <span class="num-stepper-btns">
-                    <button type="button" class="num-stepper-btn" data-target="cidr" data-dir="1" aria-label="Zwiększ">▲</button>
-                    <button type="button" class="num-stepper-btn" data-target="cidr" data-dir="-1" aria-label="Zmniejsz">▼</button>
-                  </span>
-                </span>
-              </div>
-              <div class="s-field">
-                <label for="port">Port</label>
-                <span class="num-stepper">
-                  <input type="number" id="port" min="1" max="65535" value="9" required>
-                  <span class="num-stepper-btns">
-                    <button type="button" class="num-stepper-btn" data-target="port" data-dir="1" aria-label="Zwiększ">▲</button>
-                    <button type="button" class="num-stepper-btn" data-target="port" data-dir="-1" aria-label="Zmniejsz">▼</button>
-                  </span>
-                </span>
-              </div>
-            </div>
-            <div class="s-field">
-              <label for="comment">Komentarz</label>
-              <input type="text" id="comment" placeholder="np. Biurko - PC" required>
-            </div>
-            <div id="formError" class="field-error" hidden></div>
-            <div class="s-field-row">
-              <button type="submit" class="btn btn-small-primary" id="formSubmit">Dodaj hosta</button>
-              <button type="button" class="btn btn-secondary" id="formCancel">Anuluj</button>
-            </div>
-          </form>
+          <p id="noHostsMsg" class="muted" hidden>Brak hostów. Dodaj je w panelu serwera, potem odśwież listę.</p>
+          <p class="muted" style="font-size:11px;margin:4px 0 0;">Gwiazdka wybiera host domyślny (jego status widać na ikonie).</p>
         </div>
 
         <div class="settings-card">

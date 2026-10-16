@@ -3,6 +3,7 @@ importScripts('shared/api.js');
 var ALARM_NAME = 'defaultHostCheck';
 var DEFAULT_SERVER_URL = '';
 var DEFAULT_POLL_MINUTES = 5;
+var HOSTS_MAX_AGE_MS = 60 * 60 * 1000; // lista hostów z serwera odświeżana najwyżej raz na godzinę przy sprawdzaniu w tle
 
 var BADGE = {
   online: { text: '', color: '#2e7d32' },
@@ -20,13 +21,18 @@ function iconPathsFor(variant) {
   return paths;
 }
 
+// Źródłem prawdy o hostach jest serwer gptwol; lokalnie trzymamy tylko cache listy (storage.local)
+// i wskazanie hosta domyślnego (storage.sync). Kluczem hosta jest jego MAC (unikalny na serwerze).
 function getSyncSettings() {
   return chrome.storage.sync.get({
     serverUrl: DEFAULT_SERVER_URL,
     pollMinutes: DEFAULT_POLL_MINUTES,
-    defaultHostId: null,
-    hosts: []
+    defaultHostId: null
   });
+}
+
+function getHostsCache() {
+  return chrome.storage.local.get({ hostsCache: [], hostsCacheTime: 0 });
 }
 
 function getStatusCache() {
@@ -58,8 +64,7 @@ var ERROR_LOG_MAX = 50;
 function logError(context, result) {
   // chrome://extensions -> Błędy pokazuje tylko spłaszczony string ("[object Object]" dla
   // obiektów) w tym jednolinijkowym podglądzie -- pełny obiekt jest widoczny dopiero po
-  // otwarciu prawdziwego DevTools (przycisk "Wyświetl w Narzędziach deweloperskich"), więc
-  // dorzucamy JSON obok, żeby przyczyna była czytelna nawet bez tego dodatkowego kroku.
+  // otwarciu prawdziwego DevTools, więc dorzucamy JSON obok, żeby przyczyna była czytelna.
   var detail;
   try { detail = JSON.stringify(result); } catch (e) { detail = String(result); }
   console.error('[Wake on LAN] ' + context + ': ' + detail);
@@ -90,44 +95,89 @@ function appendErrorLog(entry) {
 
 function findHost(hosts, hostId) {
   for (var i = 0; i < hosts.length; i++) {
-    if (hosts[i].id === hostId) return hosts[i];
+    if (hosts[i].mac === hostId) return hosts[i];
   }
   return null;
 }
 
-function checkDefaultHostAndSetBadge() {
+// Host domyślny, a gdy nie ustawiono (albo zniknął z serwera) -- pierwszy z listy, tak samo jak w popupie.
+function pickDefaultHost(hosts, defaultHostId) {
+  return findHost(hosts, defaultHostId) || hosts[0] || null;
+}
+
+// Pobiera listę komputerów z serwera i odświeża cache. Zwraca { ok, hosts } lub { ok:false, message }.
+function refreshHosts() {
   return getSyncSettings().then(function (settings) {
-    var host = findHost(settings.hosts, settings.defaultHostId);
-    if (!host) {
-      setBadge('unknown');
-      return { ok: false, kind: 'no_default' };
+    if (!settings.serverUrl) {
+      return { ok: false, message: 'Najpierw wpisz adres serwera w Ustawieniach.' };
     }
     return hasPermissionFor(settings.serverUrl).then(function (granted) {
       if (!granted) {
-        setBadge('error');
-        logError('Sprawdzanie domyślnego hosta: brak uprawnień do ' + settings.serverUrl, { kind: 'permission' });
-        return { ok: false, kind: 'permission' };
+        logError('Pobieranie listy hostów: brak uprawnień do ' + settings.serverUrl, { kind: 'permission' });
+        return { ok: false, message: WolApi.errorToPolish({ ok: false, kind: 'permission' }) };
       }
-      return WolApi.hostCheck(settings.serverUrl, host.host).then(function (result) {
+      return WolApi.getComputers(settings.serverUrl).then(function (result) {
         if (!result.ok) {
-          setBadge('error');
-          logError('Sprawdzanie hosta "' + (host.comment || host.host) + '"', result);
-          return setStatusFor(host.id, {
-            isUp: null,
-            info: null,
-            lastChecked: Date.now(),
-            errorKind: result.kind,
-            errorMessage: WolApi.errorToPolish(result)
-          }).then(function () { return result; });
+          logError('Pobieranie listy hostów', result);
+          return { ok: false, message: WolApi.errorToPolish(result) };
         }
-        var isUp = !!result.data.isUp;
-        setBadge(isUp ? 'online' : 'offline');
-        return setStatusFor(host.id, {
-          isUp: isUp,
-          info: result.data.info || null,
-          lastChecked: Date.now(),
-          errorKind: null
-        }).then(function () { return { ok: true, isUp: isUp, info: result.data.info }; });
+        return chrome.storage.local.set({
+          hostsCache: result.data,
+          hostsCacheTime: Date.now()
+        }).then(function () {
+          return { ok: true, hosts: result.data };
+        });
+      });
+    });
+  });
+}
+
+// Zwraca hosty z cache; gdy cache jest pusty (albo force/zbyt stary), próbuje pobrać z serwera.
+function loadHosts(maxAgeMs) {
+  return getHostsCache().then(function (c) {
+    var fresh = c.hostsCache.length > 0 && (maxAgeMs === undefined || Date.now() - c.hostsCacheTime < maxAgeMs);
+    if (fresh) return c.hostsCache;
+    return refreshHosts().then(function (r) { return r.ok ? r.hosts : c.hostsCache; });
+  });
+}
+
+function checkDefaultHostAndSetBadge() {
+  return getSyncSettings().then(function (settings) {
+    if (!settings.serverUrl) {
+      setBadge('unknown');
+      return { ok: false, kind: 'no_server' };
+    }
+    return loadHosts(HOSTS_MAX_AGE_MS).then(function (hosts) {
+      var host = pickDefaultHost(hosts, settings.defaultHostId);
+      if (!host) {
+        setBadge('unknown');
+        return { ok: false, kind: 'no_default' };
+      }
+      return hasPermissionFor(settings.serverUrl).then(function (granted) {
+        if (!granted) {
+          setBadge('error');
+          logError('Sprawdzanie domyślnego hosta: brak uprawnień do ' + settings.serverUrl, { kind: 'permission' });
+          return { ok: false, kind: 'permission' };
+        }
+        return WolApi.checkStatus(settings.serverUrl, host).then(function (result) {
+          if (!result.ok) {
+            setBadge('error');
+            logError('Sprawdzanie hosta "' + host.name + '"', result);
+            return setStatusFor(host.mac, {
+              isUp: null,
+              lastChecked: Date.now(),
+              errorKind: result.kind,
+              errorMessage: WolApi.errorToPolish(result)
+            }).then(function () { return result; });
+          }
+          var isUp = !!result.data.isUp;
+          setBadge(isUp ? 'online' : 'offline');
+          return setStatusFor(host.mac, {
+            isUp: isUp,
+            lastChecked: Date.now(),
+            errorKind: null
+          }).then(function () { return { ok: true, isUp: isUp }; });
+        });
       });
     });
   });
@@ -135,70 +185,56 @@ function checkDefaultHostAndSetBadge() {
 
 function checkHostById(hostId) {
   return getSyncSettings().then(function (settings) {
-    var host = findHost(settings.hosts, hostId);
-    if (!host) return { ok: false, message: 'Nie znaleziono hosta.' };
-    return hasPermissionFor(settings.serverUrl).then(function (granted) {
-      if (!granted) {
-        logError('Sprawdzanie hosta "' + (host.comment || host.host) + '": brak uprawnień do ' + settings.serverUrl, { kind: 'permission' });
-        return { ok: false, message: WolApi.errorToPolish({ ok: false, kind: 'permission' }) };
-      }
-      return WolApi.hostCheck(settings.serverUrl, host.host).then(function (result) {
-        if (!result.ok) {
-          var msg = WolApi.errorToPolish(result);
-          logError('Sprawdzanie hosta "' + (host.comment || host.host) + '"', result);
-          return setStatusFor(hostId, {
-            isUp: null, info: null, lastChecked: Date.now(), errorKind: result.kind, errorMessage: msg
-          }).then(function () { return { ok: false, message: msg }; });
+    return loadHosts().then(function (hosts) {
+      var host = findHost(hosts, hostId);
+      if (!host) return { ok: false, message: 'Nie znaleziono hosta na serwerze.' };
+      return hasPermissionFor(settings.serverUrl).then(function (granted) {
+        if (!granted) {
+          logError('Sprawdzanie hosta "' + host.name + '": brak uprawnień do ' + settings.serverUrl, { kind: 'permission' });
+          return { ok: false, message: WolApi.errorToPolish({ ok: false, kind: 'permission' }) };
         }
-        var isUp = !!result.data.isUp;
-        return setStatusFor(hostId, {
-          isUp: isUp, info: result.data.info || null, lastChecked: Date.now(), errorKind: null
-        }).then(function () {
-          if (hostId === settings.defaultHostId) setBadge(isUp ? 'online' : 'offline');
-          return { ok: true, isUp: isUp, info: result.data.info };
+        return WolApi.checkStatus(settings.serverUrl, host).then(function (result) {
+          if (!result.ok) {
+            var msg = WolApi.errorToPolish(result);
+            logError('Sprawdzanie hosta "' + host.name + '"', result);
+            return setStatusFor(hostId, {
+              isUp: null, lastChecked: Date.now(), errorKind: result.kind, errorMessage: msg
+            }).then(function () { return { ok: false, message: msg }; });
+          }
+          var isUp = !!result.data.isUp;
+          return setStatusFor(hostId, {
+            isUp: isUp, lastChecked: Date.now(), errorKind: null
+          }).then(function () {
+            var def = pickDefaultHost(hosts, settings.defaultHostId);
+            if (def && def.mac === hostId) setBadge(isUp ? 'online' : 'offline');
+            return { ok: true, isUp: isUp };
+          });
         });
       });
     });
   });
 }
 
-function wakeHostById(hostId) {
+// intent: 'wake' | 'sleep'. Blokadę "host już działa / już nie działa" robi WolApi.sendPower
+// (serwer ma tylko przełącznik, więc bez niej "Wybudź" na działającym komputerze by go wyłączyło).
+function powerHostById(hostId, intent) {
   return getSyncSettings().then(function (settings) {
-    var host = findHost(settings.hosts, hostId);
-    if (!host) return { ok: false, message: 'Nie znaleziono hosta.' };
-    return hasPermissionFor(settings.serverUrl).then(function (granted) {
-      if (!granted) {
-        logError('Wybudzanie hosta "' + (host.comment || host.host) + '": brak uprawnień do ' + settings.serverUrl, { kind: 'permission' });
-        return { ok: false, message: WolApi.errorToPolish({ ok: false, kind: 'permission' }) };
-      }
-      return WolApi.hostWakeup(settings.serverUrl, host).then(function (result) {
-        if (!result.ok) {
-          logError('Wybudzanie hosta "' + (host.comment || host.host) + '"', result);
-          return { ok: false, message: WolApi.errorToPolish(result) };
+    return loadHosts().then(function (hosts) {
+      var host = findHost(hosts, hostId);
+      if (!host) return { ok: false, message: 'Nie znaleziono hosta na serwerze.' };
+      var label = (intent === 'sleep' ? 'Uśpienie' : 'Wybudzanie') + ' hosta "' + host.name + '"';
+      return hasPermissionFor(settings.serverUrl).then(function (granted) {
+        if (!granted) {
+          logError(label + ': brak uprawnień do ' + settings.serverUrl, { kind: 'permission' });
+          return { ok: false, message: WolApi.errorToPolish({ ok: false, kind: 'permission' }) };
         }
-        return { ok: true, message: (result.data && result.data.info) || 'Wysłano pakiet magic.' };
-      });
-    });
-  });
-}
-
-function refreshConfig() {
-  return getSyncSettings().then(function (settings) {
-    return hasPermissionFor(settings.serverUrl).then(function (granted) {
-      if (!granted) {
-        logError('Import konfiguracji z serwera: brak uprawnień do ' + settings.serverUrl, { kind: 'permission' });
-        return { ok: false, message: WolApi.errorToPolish({ ok: false, kind: 'permission' }) };
-      }
-      return WolApi.configGet(settings.serverUrl).then(function (result) {
-        if (!result.ok) {
-          logError('Import konfiguracji z serwera', result);
-          return { ok: false, message: WolApi.errorToPolish(result) };
-        }
-        return chrome.storage.local.set({
-          configCache: result.data,
-          configCacheTime: Date.now()
-        }).then(function () {
-          return { ok: true, hosts: result.data };
+        return WolApi.sendPower(settings.serverUrl, host, intent).then(function (result) {
+          if (!result.ok) {
+            // Odmowa z powodu stanu hosta to nie awaria -- nie śmiecimy logiem błędów.
+            if (result.kind !== 'already_awake' && result.kind !== 'already_asleep') logError(label, result);
+            return { ok: false, kind: result.kind, message: WolApi.errorToPolish(result) };
+          }
+          return { ok: true, action: result.data.action, intentMismatch: result.data.action !== intent, name: host.name };
         });
       });
     });
@@ -212,13 +248,23 @@ function scheduleAlarm() {
   });
 }
 
-chrome.runtime.onInstalled.addListener(function () {
-  scheduleAlarm().then(checkDefaultHostAndSetBadge);
-});
+// Wersja pod wake-on-lan.php trzymała hosty lokalnie (storage.sync, klucze UUID). Teraz hosty
+// pochodzą z serwera i są kluczowane MAC-iem, więc stare dane są bezużyteczne -- czyścimy je.
+function migrateLegacyStorage() {
+  return chrome.storage.sync.get({ hosts: null }).then(function (r) {
+    if (!Array.isArray(r.hosts)) return;
+    return chrome.storage.sync.remove(['hosts', 'defaultHostId']).then(function () {
+      return chrome.storage.local.set({ statusCache: {} });
+    });
+  });
+}
 
-chrome.runtime.onStartup.addListener(function () {
-  scheduleAlarm().then(checkDefaultHostAndSetBadge);
-});
+function startup() {
+  return migrateLegacyStorage().then(scheduleAlarm).then(checkDefaultHostAndSetBadge);
+}
+
+chrome.runtime.onInstalled.addListener(function () { startup(); });
+chrome.runtime.onStartup.addListener(function () { startup(); });
 
 chrome.alarms.onAlarm.addListener(function (alarm) {
   if (alarm.name === ALARM_NAME) {
@@ -240,14 +286,14 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
   if (!message || !message.type) return false;
 
   switch (message.type) {
-    case 'REFRESH_CONFIG':
-      refreshConfig().then(sendResponse);
+    case 'REFRESH_HOSTS':
+      refreshHosts().then(sendResponse);
       return true;
     case 'CHECK_HOST':
       checkHostById(message.hostId).then(sendResponse);
       return true;
-    case 'WAKE_HOST':
-      wakeHostById(message.hostId).then(sendResponse);
+    case 'POWER_HOST':
+      powerHostById(message.hostId, message.intent).then(sendResponse);
       return true;
     case 'SET_DEFAULT':
       chrome.storage.sync.set({ defaultHostId: message.hostId }).then(function () {
@@ -257,7 +303,8 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
       });
       return true;
     case 'SERVER_URL_CHANGED':
-      chrome.storage.local.set({ statusCache: {} }).then(function () {
+      // Cache hostów i statusów dotyczył poprzedniego serwera.
+      chrome.storage.local.set({ statusCache: {}, hostsCache: [], hostsCacheTime: 0 }).then(function () {
         return checkDefaultHostAndSetBadge();
       }).then(function () {
         sendResponse({ ok: true });

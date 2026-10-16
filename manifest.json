@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Wake on LAN",
   "version": "1.0.0",
-  "description": "Wybudzanie komputerów przez Wake-on-LAN za pomocą serwera wake-on-lan.php.",
+  "description": "Wybudzanie i usypianie komputerów w sieci przez serwer gptwol (Wake/Sleep-on-LAN), ze statusem hosta na ikonie.",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Wake on LAN",

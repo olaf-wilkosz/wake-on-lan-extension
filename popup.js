@@ -1,13 +1,17 @@
 (function () {
   var DEFAULT_SERVER_URL = '';
 
+  // Hosty pochodzą z serwera gptwol (cache w storage.local); lokalnie trzymamy tylko adres serwera,
+  // interwał i wybór hosta domyślnego. Kluczem hosta jest jego MAC.
   var state = {
-    settings: { serverUrl: DEFAULT_SERVER_URL, pollMinutes: 5, defaultHostId: null, hosts: [] },
+    settings: { serverUrl: DEFAULT_SERVER_URL, pollMinutes: 5, defaultHostId: null },
+    hosts: [],
     statusCache: {},
     othersExpanded: false,
     checkingIds: new Set(),
-    editingId: null,
-    pendingImport: null
+    busyIds: new Set(),
+    confirmSleepId: null,
+    confirmTimer: null
   };
 
   var el = {
@@ -22,6 +26,7 @@
     errorBannerClose: document.getElementById('errorBannerClose'),
     toast: document.getElementById('toast'),
     emptyState: document.getElementById('emptyState'),
+    emptyStateText: document.getElementById('emptyStateText'),
     emptyStateOptions: document.getElementById('emptyStateOptions'),
     defaultHostSection: document.getElementById('defaultHostSection'),
     defaultHostName: document.getElementById('defaultHostName'),
@@ -30,6 +35,10 @@
     defaultLastChecked: document.getElementById('defaultLastChecked'),
     defaultErrorDetail: document.getElementById('defaultErrorDetail'),
     defaultWakeBtn: document.getElementById('defaultWakeBtn'),
+    defaultConfirm: document.getElementById('defaultConfirm'),
+    defaultConfirmText: document.getElementById('defaultConfirmText'),
+    defaultConfirmYes: document.getElementById('defaultConfirmYes'),
+    defaultConfirmNo: document.getElementById('defaultConfirmNo'),
     toggleOthers: document.getElementById('toggleOthers'),
     otherHostsList: document.getElementById('otherHostsList'),
 
@@ -38,24 +47,10 @@
     saveServerUrl: document.getElementById('saveServerUrl'),
     pollMinutes: document.getElementById('pollMinutes'),
     savePollMinutes: document.getElementById('savePollMinutes'),
-    importFromServer: document.getElementById('importFromServer'),
-    importPanel: document.getElementById('importPanel'),
-    importSummary: document.getElementById('importSummary'),
-    importConfirm: document.getElementById('importConfirm'),
-    importCancel: document.getElementById('importCancel'),
+    refreshHosts: document.getElementById('refreshHosts'),
+    openPanel: document.getElementById('openPanel'),
     settingsHostsList: document.getElementById('settingsHostsList'),
     noHostsMsg: document.getElementById('noHostsMsg'),
-    addHostToggle: document.getElementById('addHostToggle'),
-    hostForm: document.getElementById('hostForm'),
-    hostId: document.getElementById('hostId'),
-    mac: document.getElementById('mac'),
-    host: document.getElementById('host'),
-    cidr: document.getElementById('cidr'),
-    port: document.getElementById('port'),
-    comment: document.getElementById('comment'),
-    formSubmit: document.getElementById('formSubmit'),
-    formCancel: document.getElementById('formCancel'),
-    formError: document.getElementById('formError'),
     errorLogList: document.getElementById('errorLogList'),
     noErrorLogMsg: document.getElementById('noErrorLogMsg'),
     clearErrorLog: document.getElementById('clearErrorLog')
@@ -86,25 +81,28 @@
   }
 
   function displayName(host) {
-    return host.comment && host.comment.trim() ? host.comment : host.host;
+    return host.name && host.name.trim() ? host.name : host.ip;
   }
 
   function sortKey(host) {
     return displayName(host).toLocaleLowerCase();
   }
 
-  function loadState() {
-    return Promise.all([
-      chrome.storage.sync.get({ serverUrl: DEFAULT_SERVER_URL, pollMinutes: 5, defaultHostId: null, hosts: [] }),
-      chrome.storage.local.get({ statusCache: {} })
-    ]).then(function (results) {
-      state.settings = results[0];
-      state.statusCache = results[1].statusCache;
-    });
+  function testLabel(testType) {
+    if (testType === 'icmp') return 'ICMP';
+    if (testType === 'arp') return 'ARP';
+    return 'TCP ' + testType;
   }
 
-  function saveHosts() {
-    return chrome.storage.sync.set({ hosts: state.settings.hosts, defaultHostId: state.settings.defaultHostId });
+  function loadState() {
+    return Promise.all([
+      chrome.storage.sync.get({ serverUrl: DEFAULT_SERVER_URL, pollMinutes: 5, defaultHostId: null }),
+      chrome.storage.local.get({ hostsCache: [], statusCache: {} })
+    ]).then(function (results) {
+      state.settings = results[0];
+      state.hosts = results[1].hostsCache;
+      state.statusCache = results[1].statusCache;
+    });
   }
 
   function refreshAll() {
@@ -201,10 +199,41 @@
     return '<span class="status-dot ' + statusClass(entry, checking) + '"></span>';
   }
 
+  // Serwer gptwol ma tylko PRZEŁĄCZNIK wake/sleep, więc to, co przycisk robi, wynika ze statusu
+  // hosta: działa -> "Uśpij" (z potwierdzeniem), w pozostałych przypadkach -> "Wybudź".
+  // Blokadę przed odwrotnym skutkiem stosuje jeszcze background (WolApi.sendPower).
+  function isAwake(entry) {
+    return !!(entry && entry.isUp === true);
+  }
+
+  function armSleepConfirm(mac) {
+    state.confirmSleepId = mac;
+    clearTimeout(state.confirmTimer);
+    state.confirmTimer = setTimeout(function () {
+      state.confirmSleepId = null;
+      renderMain();
+    }, 6000);
+  }
+
+  function clearSleepConfirm() {
+    state.confirmSleepId = null;
+    clearTimeout(state.confirmTimer);
+  }
+
+  function pickDefault(hosts) {
+    for (var i = 0; i < hosts.length; i++) {
+      if (hosts[i].mac === state.settings.defaultHostId) return hosts[i];
+    }
+    return hosts[0] || null;
+  }
+
   function renderMain() {
-    var hosts = state.settings.hosts || [];
+    var hosts = state.hosts || [];
 
     if (hosts.length === 0) {
+      el.emptyStateText.textContent = state.settings.serverUrl
+        ? 'Brak hostów na serwerze. Dodaj je w panelu serwera i odśwież listę w Ustawieniach.'
+        : 'Brak hostów. Wpisz adres serwera w Ustawieniach.';
       el.emptyState.hidden = false;
       el.defaultHostSection.hidden = true;
       el.toggleOthers.hidden = true;
@@ -213,16 +242,8 @@
     }
     el.emptyState.hidden = true;
 
-    var defaultHost = null;
-    var others = [];
-    hosts.forEach(function (h) {
-      if (h.id === state.settings.defaultHostId) defaultHost = h;
-      else others.push(h);
-    });
-    if (!defaultHost) {
-      defaultHost = hosts[0];
-      others = hosts.slice(1);
-    }
+    var defaultHost = pickDefault(hosts);
+    var others = hosts.filter(function (h) { return h.mac !== defaultHost.mac; });
     others.sort(function (a, b) { return sortKey(a).localeCompare(sortKey(b)); });
 
     renderDefaultHost(defaultHost);
@@ -232,8 +253,12 @@
   function renderDefaultHost(host) {
     el.defaultHostSection.hidden = false;
     el.defaultHostName.textContent = displayName(host);
-    var entry = state.statusCache[host.id];
-    var checking = state.checkingIds.has(host.id);
+    var entry = state.statusCache[host.mac];
+    var checking = state.checkingIds.has(host.mac);
+    var busy = state.busyIds.has(host.mac);
+    var awake = isAwake(entry);
+    var confirming = awake && state.confirmSleepId === host.mac;
+
     el.defaultStatusDot.innerHTML = statusIndicatorHtml(entry, checking);
     el.defaultStatusText.textContent = statusLabel(entry, checking);
     el.defaultLastChecked.textContent = entry && entry.lastChecked ? formatLastChecked(entry.lastChecked) : '';
@@ -245,16 +270,32 @@
       el.defaultErrorDetail.hidden = true;
     }
 
-    el.defaultWakeBtn.onclick = function () { wakeHost(host, el.defaultWakeBtn); };
+    el.defaultWakeBtn.className = 'btn ' + (awake ? 'btn-sleep-big' : 'btn-wake-big');
+    el.defaultWakeBtn.textContent = busy ? '...' : (awake ? 'Uśpij' : 'Wybudź');
+    el.defaultWakeBtn.disabled = busy;
+    el.defaultWakeBtn.hidden = confirming;
+    el.defaultConfirm.hidden = !confirming;
+    el.defaultConfirmText.textContent = 'Uśpić „' + displayName(host) + '”?';
+
+    el.defaultWakeBtn.onclick = function () {
+      if (awake) {
+        armSleepConfirm(host.mac);
+        renderMain();
+      } else {
+        power(host, 'wake');
+      }
+    };
+    el.defaultConfirmYes.onclick = function () { clearSleepConfirm(); power(host, 'sleep'); };
+    el.defaultConfirmNo.onclick = function () { clearSleepConfirm(); renderMain(); };
 
     var staleMs = Math.max(1, state.settings.pollMinutes) * 60 * 1000;
     var isStale = !entry || !entry.lastChecked || (Date.now() - entry.lastChecked) > staleMs;
     if (isStale && !checking) {
-      state.checkingIds.add(host.id);
+      state.checkingIds.add(host.mac);
       el.defaultStatusDot.innerHTML = statusIndicatorHtml(null, true);
       el.defaultStatusText.textContent = 'Sprawdzanie...';
-      chrome.runtime.sendMessage({ type: 'CHECK_HOST', hostId: host.id }, function () {
-        state.checkingIds.delete(host.id);
+      chrome.runtime.sendMessage({ type: 'CHECK_HOST', hostId: host.mac }, function () {
+        state.checkingIds.delete(host.mac);
         loadState().then(renderMain);
       });
     }
@@ -273,6 +314,12 @@
 
     el.otherHostsList.innerHTML = '';
     others.forEach(function (host) {
+      var entry = state.statusCache[host.mac];
+      var checking = state.checkingIds.has(host.mac);
+      var busy = state.busyIds.has(host.mac);
+      var awake = isAwake(entry);
+      var confirming = awake && state.confirmSleepId === host.mac;
+
       var li = document.createElement('li');
       li.className = 'other-host-row';
 
@@ -288,23 +335,22 @@
       statusRow.className = 'other-host-status';
       var indicator = document.createElement('span');
       indicator.className = 'status-indicator';
-      indicator.innerHTML = statusIndicatorHtml(state.statusCache[host.id], state.checkingIds.has(host.id));
+      indicator.innerHTML = statusIndicatorHtml(entry, checking);
       var text = document.createElement('span');
-      text.textContent = statusLabel(state.statusCache[host.id], state.checkingIds.has(host.id));
-      var otherEntry = state.statusCache[host.id];
-      if (otherEntry && otherEntry.errorKind && otherEntry.errorMessage) {
-        text.title = otherEntry.errorMessage;
+      text.textContent = statusLabel(entry, checking);
+      if (entry && entry.errorKind && entry.errorMessage) {
+        text.title = entry.errorMessage;
       }
       statusRow.appendChild(indicator);
       statusRow.appendChild(text);
       info.appendChild(statusRow);
 
       info.addEventListener('click', function () {
-        if (state.checkingIds.has(host.id)) return;
-        state.checkingIds.add(host.id);
+        if (state.checkingIds.has(host.mac)) return;
+        state.checkingIds.add(host.mac);
         renderOthers(others);
-        chrome.runtime.sendMessage({ type: 'CHECK_HOST', hostId: host.id }, function () {
-          state.checkingIds.delete(host.id);
+        chrome.runtime.sendMessage({ type: 'CHECK_HOST', hostId: host.mac }, function () {
+          state.checkingIds.delete(host.mac);
           loadState().then(renderMain);
         });
       });
@@ -316,85 +362,86 @@
       starBtn.addEventListener('click', function (e) {
         e.stopPropagation();
         starBtn.disabled = true;
-        chrome.runtime.sendMessage({ type: 'SET_DEFAULT', hostId: host.id }, function () {
+        chrome.runtime.sendMessage({ type: 'SET_DEFAULT', hostId: host.mac }, function () {
           state.othersExpanded = true;
           refreshAll();
         });
       });
 
-      var wakeBtn = document.createElement('button');
-      wakeBtn.className = 'btn btn-wake-small';
-      wakeBtn.textContent = 'Wybudź';
-      wakeBtn.addEventListener('click', function (e) {
+      var powerBtn = document.createElement('button');
+      powerBtn.className = 'btn ' + (awake ? 'btn-sleep-small' : 'btn-wake-small');
+      powerBtn.textContent = busy ? '...' : (awake ? (confirming ? 'Na pewno?' : 'Uśpij') : 'Wybudź');
+      powerBtn.disabled = busy;
+      powerBtn.addEventListener('click', function (e) {
         e.stopPropagation();
-        wakeHost(host, wakeBtn);
+        if (!awake) { power(host, 'wake'); return; }
+        if (confirming) { clearSleepConfirm(); power(host, 'sleep'); return; }
+        armSleepConfirm(host.mac);
+        renderMain();
       });
 
       li.appendChild(info);
       li.appendChild(starBtn);
-      li.appendChild(wakeBtn);
+      li.appendChild(powerBtn);
       el.otherHostsList.appendChild(li);
     });
   }
 
-  function wakeHost(host, button) {
+  // intent: 'wake' | 'sleep'
+  function power(host, intent) {
     hideError();
-    button.disabled = true;
-    var originalText = button.textContent;
-    button.textContent = '...';
+    state.busyIds.add(host.mac);
+    renderMain();
 
-    // Sprawdzanie/wysyłanie może potrwać kilka sekund (patrz shared/api.js timeouty) --
-    // pokazujemy stan "w toku" natychmiast i bez auto-ukrywania (showToast ukrywa po 6s,
-    // co mogłoby zniknąć zanim przyjdzie odpowiedź i wyglądać jakby nic się nie stało).
-    el.toast.textContent = 'Wysyłanie pakietu magic do: ' + displayName(host) + '...';
+    // Sprawdzenie statusu + wysłanie może łącznie potrwać kilkanaście sekund (timeouty w
+    // shared/api.js) -- pokazujemy stan "w toku" natychmiast i bez auto-ukrywania (showToast
+    // ukrywa po 6s, co mogłoby zniknąć zanim przyjdzie odpowiedź i wyglądać jakby nic się nie stało).
+    el.toast.textContent = (intent === 'sleep' ? 'Usypianie: ' : 'Wybudzanie: ') + displayName(host) + '...';
     el.toast.hidden = false;
 
     var settled = false;
+    function finish() {
+      state.busyIds.delete(host.mac);
+      el.toast.hidden = true;
+    }
+
     var safetyTimer = setTimeout(function () {
       if (settled) return;
       settled = true;
-      button.disabled = false;
-      button.textContent = originalText;
-      el.toast.hidden = true;
+      finish();
+      renderMain();
       showError('Brak odpowiedzi od rozszerzenia (przekroczono czas oczekiwania). Spróbuj ponownie.');
-    }, 12000);
+    }, 22000);
 
-    chrome.runtime.sendMessage({ type: 'WAKE_HOST', hostId: host.id }, function (response) {
+    chrome.runtime.sendMessage({ type: 'POWER_HOST', hostId: host.mac, intent: intent }, function (response) {
       if (settled) return;
       settled = true;
       clearTimeout(safetyTimer);
-      button.disabled = false;
-      button.textContent = originalText;
-      el.toast.hidden = true;
+      finish();
+
       if (!response || !response.ok) {
         showError((response && response.message) || 'Nie udało się wysłać pakietu.');
+        // Odmowa "już działa"/"już nie działa" oznacza, że nasz widok statusu był nieaktualny --
+        // odświeżamy go, żeby przycisk od razu pokazał właściwą akcję.
+        if (response && (response.kind === 'already_awake' || response.kind === 'already_asleep')) {
+          chrome.runtime.sendMessage({ type: 'CHECK_HOST', hostId: host.mac }, function () { refreshAll(); });
+        } else {
+          renderMain();
+        }
         return;
       }
-      showToast('Wysłano pakiet magic do: ' + displayName(host));
+
+      var what = response.action === 'sleep' ? 'Sleep-on-LAN' : 'Wake-on-LAN';
+      var msg = 'Wysłano ' + what + ': ' + displayName(host);
+      if (response.intentMismatch) {
+        msg += ' (stan hosta zmienił się w międzyczasie, więc serwer wykonał inną akcję niż zamierzona)';
+      }
+      showToast(msg);
+      renderMain();
     });
   }
 
   // ---------- settings screen ----------
-
-  var MAC_RE = /^([0-9A-Fa-f]{2})[:-]?([0-9A-Fa-f]{2})[:-]?([0-9A-Fa-f]{2})[:-]?([0-9A-Fa-f]{2})[:-]?([0-9A-Fa-f]{2})[:-]?([0-9A-Fa-f]{2})$/;
-  var HOSTNAME_OR_IP_RE = /^(([0-9]{1,3}\.){3}[0-9]{1,3}|[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)$/;
-
-  function normalizeMac(raw) {
-    var m = raw.trim().match(MAC_RE);
-    if (!m) return null;
-    return [m[1], m[2], m[3], m[4], m[5], m[6]].join(':').toUpperCase();
-  }
-
-  function validateHostField(raw) {
-    var v = raw.trim();
-    if (!v) return null;
-    if (!HOSTNAME_OR_IP_RE.test(v)) return null;
-    var octets = v.split('.');
-    if (octets.length === 4 && octets.every(function (o) { return /^\d+$/.test(o); })) {
-      if (!octets.every(function (o) { return Number(o) >= 0 && Number(o) <= 255; })) return null;
-    }
-    return v;
-  }
 
   function renderSettings() {
     if (document.activeElement !== el.serverUrl) el.serverUrl.value = state.settings.serverUrl;
@@ -403,12 +450,53 @@
     loadAndRenderErrorLog();
   }
 
+  function renderSettingsHostsList() {
+    var hosts = state.hosts || [];
+    el.noHostsMsg.hidden = hosts.length > 0;
+    el.settingsHostsList.innerHTML = '';
+    var def = pickDefault(hosts);
+
+    hosts.slice().sort(function (a, b) { return sortKey(a).localeCompare(sortKey(b)); }).forEach(function (host) {
+      var li = document.createElement('li');
+      li.className = 'settings-host-row';
+
+      var info = document.createElement('div');
+      info.className = 'settings-host-info';
+      var name = document.createElement('div');
+      name.className = 'settings-host-name';
+      name.textContent = displayName(host);
+      var sub = document.createElement('div');
+      sub.className = 'settings-host-sub';
+      sub.textContent = host.mac + ' · ' + host.ip + ' · ' + testLabel(host.testType);
+      info.appendChild(name);
+      info.appendChild(sub);
+
+      var isDefault = def && host.mac === def.mac;
+      var starBtn = document.createElement('button');
+      starBtn.className = 'set-default-btn' + (isDefault ? ' is-default' : '');
+      if (isDefault) starBtn.style.color = 'var(--star)';
+      starBtn.title = 'Ustaw jako domyślny';
+      starBtn.textContent = isDefault ? '★' : '☆';
+      starBtn.addEventListener('click', function () {
+        chrome.runtime.sendMessage({ type: 'SET_DEFAULT', hostId: host.mac }, function () {
+          refreshAll();
+          showSettingsBanner('Ustawiono jako domyślny: ' + displayName(host), false);
+        });
+      });
+
+      li.appendChild(info);
+      li.appendChild(starBtn);
+      el.settingsHostsList.appendChild(li);
+    });
+  }
+
   function errorKindLabel(kind) {
     switch (kind) {
       case 'network': return 'NETWORK_ERROR';
       case 'timeout': return 'TIMEOUT';
       case 'http_error': return 'HTTP_ERROR';
-      case 'bad_json': return 'BAD_JSON';
+      case 'bad_format': return 'BAD_FORMAT';
+      case 'auth_required': return 'AUTH_REQUIRED';
       case 'permission': return 'PERMISSION';
       default: return 'ERROR';
     }
@@ -469,146 +557,6 @@
     });
   }
 
-  function renderSettingsHostsList() {
-    var hosts = state.settings.hosts || [];
-    el.noHostsMsg.hidden = hosts.length > 0;
-    el.settingsHostsList.innerHTML = '';
-
-    hosts.slice().sort(function (a, b) { return sortKey(a).localeCompare(sortKey(b)); }).forEach(function (host) {
-      var li = document.createElement('li');
-      li.className = 'settings-host-row';
-
-      var info = document.createElement('div');
-      info.className = 'settings-host-info';
-      var name = document.createElement('div');
-      name.className = 'settings-host-name';
-      name.textContent = displayName(host);
-      var sub = document.createElement('div');
-      sub.className = 'settings-host-sub';
-      sub.textContent = host.mac + ' · ' + host.host;
-      info.appendChild(name);
-      info.appendChild(sub);
-
-      var isDefault = host.id === state.settings.defaultHostId;
-      var starBtn = document.createElement('button');
-      starBtn.className = 'set-default-btn' + (isDefault ? ' is-default' : '');
-      if (isDefault) starBtn.style.color = 'var(--star)';
-      starBtn.title = 'Ustaw jako domyślny';
-      starBtn.textContent = isDefault ? '★' : '☆';
-      starBtn.addEventListener('click', function () {
-        state.settings.defaultHostId = host.id;
-        saveHosts().then(function () {
-          chrome.runtime.sendMessage({ type: 'SET_DEFAULT', hostId: host.id });
-          refreshAll();
-          showSettingsBanner('Ustawiono jako domyślny: ' + displayName(host), false);
-        });
-      });
-
-      var editBtn = document.createElement('button');
-      editBtn.className = 'btn btn-secondary';
-      editBtn.textContent = 'Edytuj';
-      editBtn.addEventListener('click', function () { startEditHost(host); });
-
-      var delBtn = document.createElement('button');
-      delBtn.className = 'btn btn-danger';
-      delBtn.textContent = 'Usuń';
-      delBtn.addEventListener('click', function () { deleteHost(host.id); });
-
-      li.appendChild(info);
-      li.appendChild(starBtn);
-      li.appendChild(editBtn);
-      li.appendChild(delBtn);
-      el.settingsHostsList.appendChild(li);
-    });
-  }
-
-  function startEditHost(host) {
-    state.editingId = host.id;
-    el.hostId.value = host.id;
-    el.mac.value = host.mac;
-    el.host.value = host.host;
-    el.cidr.value = host.cidr;
-    el.port.value = host.port;
-    el.comment.value = host.comment;
-    el.formSubmit.textContent = 'Zapisz zmiany';
-    el.formError.hidden = true;
-    el.hostForm.hidden = false;
-    el.mac.focus();
-  }
-
-  function resetHostForm() {
-    state.editingId = null;
-    el.hostForm.reset();
-    el.hostId.value = '';
-    el.cidr.value = 24;
-    el.port.value = 9;
-    el.formSubmit.textContent = 'Dodaj hosta';
-    el.formError.hidden = true;
-    el.hostForm.hidden = true;
-  }
-
-  function deleteHost(id) {
-    state.settings.hosts = state.settings.hosts.filter(function (h) { return h.id !== id; });
-    if (state.settings.defaultHostId === id) {
-      state.settings.defaultHostId = state.settings.hosts.length > 0 ? state.settings.hosts[0].id : null;
-    }
-    saveHosts().then(function () {
-      refreshAll();
-      if (state.editingId === id) resetHostForm();
-    });
-  }
-
-  function handleHostFormSubmit(e) {
-    e.preventDefault();
-    el.formError.hidden = true;
-
-    var mac = normalizeMac(el.mac.value);
-    if (!mac) {
-      el.formError.textContent = 'Nieprawidłowy adres MAC (oczekiwano formatu AA:BB:CC:DD:EE:FF).';
-      el.formError.hidden = false;
-      return;
-    }
-    var host = validateHostField(el.host.value);
-    if (!host) {
-      el.formError.textContent = 'Nieprawidłowy adres IP lub nazwa hosta.';
-      el.formError.hidden = false;
-      return;
-    }
-    var cidr = Number(el.cidr.value);
-    if (!Number.isInteger(cidr) || cidr < 0 || cidr > 32) {
-      el.formError.textContent = 'CIDR musi być liczbą całkowitą od 0 do 32.';
-      el.formError.hidden = false;
-      return;
-    }
-    var port = Number(el.port.value);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      el.formError.textContent = 'Port musi być liczbą całkowitą od 1 do 65535.';
-      el.formError.hidden = false;
-      return;
-    }
-    var comment = el.comment.value.trim();
-    if (!comment) {
-      el.formError.textContent = 'Komentarz jest wymagany.';
-      el.formError.hidden = false;
-      return;
-    }
-
-    if (state.editingId) {
-      var existing = state.settings.hosts.find(function (h) { return h.id === state.editingId; });
-      existing.mac = mac; existing.host = host; existing.cidr = cidr; existing.port = port; existing.comment = comment;
-    } else {
-      var newHost = { id: crypto.randomUUID(), mac: mac, host: host, cidr: cidr, port: port, comment: comment };
-      state.settings.hosts.push(newHost);
-      if (!state.settings.defaultHostId) state.settings.defaultHostId = newHost.id;
-    }
-
-    saveHosts().then(function () {
-      refreshAll();
-      resetHostForm();
-      showSettingsBanner('Zapisano hosta.', false);
-    });
-  }
-
   function handleSaveServerUrl() {
     var raw = el.serverUrl.value.trim();
     if (!raw) {
@@ -626,7 +574,8 @@
       if (granted) {
         state.settings.serverUrl = normalized;
         return chrome.storage.sync.set({ serverUrl: normalized }).then(function () {
-          chrome.runtime.sendMessage({ type: 'SERVER_URL_CHANGED' });
+          // Background czyści cache poprzedniego serwera i od razu pobiera listę hostów nowego.
+          chrome.runtime.sendMessage({ type: 'SERVER_URL_CHANGED' }, function () { refreshAll(); });
           showSettingsBanner('Zapisano adres serwera.', false);
         });
       }
@@ -655,77 +604,25 @@
     });
   }
 
-  function handleImportFromServer() {
-    el.importFromServer.disabled = true;
-    chrome.runtime.sendMessage({ type: 'REFRESH_CONFIG' }, function (response) {
-      el.importFromServer.disabled = false;
+  function handleRefreshHosts() {
+    el.refreshHosts.disabled = true;
+    chrome.runtime.sendMessage({ type: 'REFRESH_HOSTS' }, function (response) {
+      el.refreshHosts.disabled = false;
       if (!response || !response.ok) {
-        showSettingsBanner((response && response.message) || 'Nie udało się pobrać konfiguracji.', true);
+        showSettingsBanner((response && response.message) || 'Nie udało się pobrać listy hostów.', true);
         return;
       }
-      var serverHosts = response.hosts || [];
-      var added = [];
-      var updated = [];
-      serverHosts.forEach(function (sh) {
-        var existing = state.settings.hosts.find(function (h) { return h.mac.toUpperCase() === (sh.mac || '').toUpperCase(); });
-        if (existing) {
-          updated.push({ existing: existing, incoming: sh });
-        } else {
-          added.push(sh);
-        }
-      });
-
-      if (added.length === 0 && updated.length === 0) {
-        showSettingsBanner('Brak zmian do zaimportowania.', false);
-        return;
-      }
-
-      state.pendingImport = { added: added, updated: updated };
-      el.importSummary.innerHTML = '';
-      added.forEach(function (h) {
-        var div = document.createElement('div');
-        div.className = 'import-item added';
-        div.textContent = '+ Nowy: ' + (h.comment || h.host) + ' (' + h.mac + ')';
-        el.importSummary.appendChild(div);
-      });
-      updated.forEach(function (u) {
-        var div = document.createElement('div');
-        div.className = 'import-item updated';
-        div.textContent = '~ Aktualizacja: ' + (u.existing.comment || u.existing.host) + ' (' + u.existing.mac + ')';
-        el.importSummary.appendChild(div);
-      });
-      el.importPanel.hidden = false;
+      showSettingsBanner('Zaktualizowano listę hostów (' + response.hosts.length + ').', false);
+      refreshAll();
     });
   }
 
-  function confirmImport() {
-    var pending = state.pendingImport;
-    if (!pending) return;
-    pending.added.forEach(function (sh) {
-      state.settings.hosts.push({
-        id: crypto.randomUUID(),
-        mac: normalizeMac(sh.mac) || sh.mac,
-        host: sh.host,
-        cidr: Number(sh.cidr) || 24,
-        port: Number(sh.port) || 9,
-        comment: sh.comment || sh.host
-      });
-    });
-    pending.updated.forEach(function (u) {
-      u.existing.host = u.incoming.host;
-      u.existing.cidr = Number(u.incoming.cidr) || u.existing.cidr;
-      u.existing.port = Number(u.incoming.port) || u.existing.port;
-      u.existing.comment = u.incoming.comment || u.existing.comment;
-    });
-    if (!state.settings.defaultHostId && state.settings.hosts.length > 0) {
-      state.settings.defaultHostId = state.settings.hosts[0].id;
+  function handleOpenPanel() {
+    if (!state.settings.serverUrl) {
+      showSettingsBanner('Najpierw wpisz i zapisz adres serwera.', true);
+      return;
     }
-    state.pendingImport = null;
-    el.importPanel.hidden = true;
-    saveHosts().then(function () {
-      refreshAll();
-      showSettingsBanner('Zaimportowano konfigurację.', false);
-    });
+    chrome.tabs.create({ url: state.settings.serverUrl });
   }
 
   // ---------- event wiring ----------
@@ -759,24 +656,8 @@
 
   el.saveServerUrl.addEventListener('click', handleSaveServerUrl);
   el.savePollMinutes.addEventListener('click', handleSavePollMinutes);
-  el.importFromServer.addEventListener('click', handleImportFromServer);
-  el.importConfirm.addEventListener('click', confirmImport);
-  el.importCancel.addEventListener('click', function () {
-    state.pendingImport = null;
-    el.importPanel.hidden = true;
-  });
-
-  el.addHostToggle.addEventListener('click', function () {
-    if (el.hostForm.hidden) {
-      resetHostForm();
-      el.hostForm.hidden = false;
-      el.mac.focus();
-    } else {
-      resetHostForm();
-    }
-  });
-  el.hostForm.addEventListener('submit', handleHostFormSubmit);
-  el.formCancel.addEventListener('click', resetHostForm);
+  el.refreshHosts.addEventListener('click', handleRefreshHosts);
+  el.openPanel.addEventListener('click', handleOpenPanel);
   el.clearErrorLog.addEventListener('click', function () {
     chrome.storage.local.set({ errorLog: [] }).then(loadAndRenderErrorLog);
   });
@@ -787,5 +668,11 @@
     }
   });
 
-  refreshAll();
+  refreshAll().then(function () {
+    // Lista mogła się zmienić na serwerze (np. kolega dodał komputer) -- odśwież przy każdym otwarciu.
+    // Przy błędzie (np. brak VPN) zostaje cache; przyczynę pokaże sprawdzanie statusu i log błędów.
+    if (state.settings.serverUrl) {
+      chrome.runtime.sendMessage({ type: 'REFRESH_HOSTS' }, function () { void chrome.runtime.lastError; });
+    }
+  });
 })();

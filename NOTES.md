@@ -1,40 +1,69 @@
 # Notatki / backlog
 
-Kontekst i ustalenia z researchu przed rozpoczęciem projektu, spisane żeby nie trzeba było ich odkrywać ponownie.
+Kontekst i ustalenia, spisane żeby nie trzeba było ich odkrywać ponownie.
 
-## API serwera wake-on-lan.php
+## Układ gałęzi
 
-Serwer (`wake-on-lan.php`, projekt AndiSHFR/wake-on-lan.php) nie ma jawnie udokumentowanego API w README — poniższe endpointy zostały odkryte poprzez analizę kodu JS strony (nie oficjalna dokumentacja) i mogą się zmienić bez ostrzeżenia przy aktualizacji serwera:
+- `main` — rozszerzenie pod **gptwol** ([Misterbabou/gptwol](https://github.com/Misterbabou/gptwol)), aktualny kierunek.
+- `legacy-wolphp` — zamrożona wersja pod stary serwer AndiSHFR/wake-on-lan.php (zespół z niego zrezygnował, upstream nieaktywny od ok. 4 lat). Nie rozwijamy; gdyby kiedyś były dwa projekty, to stąd.
 
-- `GET /index.php?aop=CONFIG.GET` — zwraca JSON z listą hostów: `[{mac, host, cidr, port, comment}, ...]`
-- `GET /index.php?aop=HOST.CHECK&host=<IP>` — sprawdza status hosta (test połączenia ssh/rdp/http/https na kolejnych portach, nie zwykły ping — patrz `HOST_CHECK_PORTS` w kodzie serwera)
-- `GET /index.php?aop=HOST.WAKEUP&mac=<MAC>&host=<IP>&cidr=<CIDR>&port=<PORT>&comment=<TEXT>&debug=0` — wysyła magic packet
+Priorytet: usprawnienie pracy własnej i zespołu. Publikacja w Chrome Web Store jest możliwym celem na później — patrz "Pod publikację".
 
-Błędy serwera wracają jako HTTP 500 z czystym tekstem (`"Internal Server Error! <message>"`), nie JSON — klient musi to obsłużyć osobno (patrz `shared/api.js`).
+## Kontrakt gptwol (nieoficjalny)
 
-**Status**: te trzy wywołania są już wydzielone do jednego modułu klienta ([shared/api.js](shared/api.js)) zgodnie z rekomendacją "jedno miejsce edycji przy zmianie kontraktu" — nie jest to rozproszone po `popup.js`/`background.js`.
+gptwol nie ma udokumentowanego API ani endpointu JSON. Poniższe wynika z czytania jego kodu (`app/wol.py`, `app/templates/wol_form.html`) i może się zmienić przy aktualizacji serwera. Całość jest w jednym miejscu: [shared/api.js](shared/api.js).
 
-## CORS
+| Operacja | Wywołanie | Odpowiedź |
+|---|---|---|
+| Lista hostów | `GET /` | HTML (brak JSON-a); parsujemy ukryte pole `mac_address`, nazwę i `data-ip-address`/`data-test-type` |
+| Status | `GET /check_status?ip_address=&test_type=` | tekst `awake` / `asleep` |
+| Wake **albo** Sleep | `POST /wol_or_sol_send` (`mac_address=`) | HTML z modalem |
 
-Serwer nie wysyła jawnych nagłówków CORS. Rozszerzenie działa mimo to, bo `host_permissions` w Manifest V3 pozwala service workerowi/kontekstom rozszerzenia ominąć restrykcje CORS przy `fetch()` — to udokumentowane zachowanie Chrome, nie przypadek. Wyjaśniający komentarz dodany bezpośrednio w [shared/api.js](shared/api.js) przy funkcji `request()`, żeby nikt w przyszłości nie próbował tego niepotrzebnie "naprawiać" (np. dodając tryb `no-cors` albo proxy).
+`test_type` jest per host: `icmp`, `arp` albo numer portu TCP. Hosty trzeba najpierw dodać w panelu serwera (wybudzenie idzie po samym MAC-u, nieznany MAC = HTTP 500).
 
-## Dostępność serwera tylko przez VPN
+### Uwaga: `wol_or_sol_send` to PRZEŁĄCZNIK
 
-Docelowy serwer (adres celowo nie jest tu wypisany — patrz sekcja "Audyt bezpieczeństwa" poniżej) jest dostępny wyłącznie po połączeniu z firmowym VPN-em. Z poziomu `fetch()` w przeglądarce nie da się technicznie odróżnić "jestem poza VPN-em" od "serwer faktycznie padł" — oba objawiają się tym samym błędem sieciowym (np. `TypeError: Failed to fetch`, brak rozwiązania DNS, connection refused), bez dodatkowej infrastruktury (np. sprawdzania innego znanego hosta w tej samej sieci) nie da się tego wiarygodnie rozróżnić po stronie klienta.
+Serwer sam sprawdza, czy host działa, i jeśli tak, wysyła **Sleep-on-LAN (wyłączenie)** zamiast WoL. Samo "Wybudź" na działającym komputerze mogłoby go więc wyłączyć. Zabezpieczenia w rozszerzeniu:
 
-Zrobione: komunikat błędu dla kategorii `network` w `WolApi.errorToPolish()` podpowiada sprawdzenie VPN, bo to najbardziej prawdopodobna przyczyna w tym środowisku — nie próbuje jednak twierdzić z pewnością, że to na 100% brak VPN (bo tego nie wiemy).
+- `WolApi.sendPower(base, host, intent)` najpierw sprawdza status tym samym testem co serwer i **odmawia**, gdy wysłanie dałoby odwrotny skutek (`already_awake` / `already_asleep`) — wtedy nic nie jest wysyłane.
+- "Uśpij" wymaga potwierdzenia w UI (przycisk host-domyślny: wiersz "Uśpić ...?"; lista: "Na pewno?" przez 6 s).
+- Zostaje wąski wyścig między naszym sprawdzeniem a sprawdzeniem serwera. Dlatego po wysłaniu parsujemy odpowiedź i raportujemy to, co serwer FAKTYCZNIE zrobił (a nie to, co zamierzaliśmy).
+- Sam panel gptwol robi to samo (przycisk zielony "Wake" / czerwony "Sleep" zależnie od statusu).
 
-**Backlog / do rozważenia w przyszłości**: jeśli kiedyś pojawi się potrzeba pewniejszego rozróżnienia, można by dodać osobny, zawsze-dostępny (nie tylko po VPN) endpoint healthcheck do testowania ogólnej łączności z siecią firmową — obecnie takiego endpointu nie ma, więc to zostaje jako pomysł, nie zadanie do zrobienia teraz.
+Przetestowane: parser i status na żywym serwerze (tylko odczyt), cała logika przełącznika i UI na atrapie serwera. Ścieżki wysyłającej na prawdziwym serwerze celowo NIE testowano automatycznie (wybudziłaby albo wyłączyła realną maszynę).
 
-## Audyt bezpieczeństwa (przed pierwszym commitem)
+## Model danych
 
-Przed inicjalizacją gita zrobiony przegląd repo pod kątem wycieku danych. Znalezisko: rzeczywisty adres serwera (VPN-only, bez żadnej autentykacji po stronie `wake-on-lan.php` — patrz sekcja API wyżej) był zahardcodowany w `manifest.json` (`host_permissions`), `background.js`, `popup.js` i jako placeholder w `popup.html`. Ryzyko: skoro serwer nie ma auth, upublicznienie repo ujawniłoby dokładny adres wewnętrznej bramki WoL komukolwiek z dostępem do tego samego VPN-a (niekoniecznie autoryzowanemu do używania akurat tego narzędzia) — bez żadnej korzyści dla kogoś spoza tej sieci, która nie ma dostępu i tak.
+Źródłem prawdy o hostach jest **serwer**; rozszerzenie trzyma tylko cache listy (`storage.local.hostsCache`), statusy (`statusCache`), log błędów, oraz (`storage.sync`) adres serwera, interwał i host domyślny. Kluczem hosta jest MAC. Dzięki temu cały zespół widzi tę samą listę bez ręcznego wpisywania. Dodawanie/edycja/usuwanie hostów odbywa się w panelu serwera (przycisk "Panel serwera" w Ustawieniach).
 
-Naprawione:
-- `DEFAULT_SERVER_URL` w `background.js`/`popup.js` to teraz pusty string — pole adresu w Ustawieniach jest puste przy pierwszym uruchomieniu, trzeba je wypełnić ręcznie (dowolnym adresem, nie tylko swoim). Rozważany był mechanizm lokalnego, zignorowanego przez git podpowiadania adresu (`config.local.js`) dla wygody -- odrzucony, bo pole miało być czyste dla każdego kto uruchamia rozszerzenie, bez żadnego automatycznego wypełniania, nawet lokalnie.
-- `manifest.json` nie ma już statycznego `host_permissions` dla konkretnej domeny — każdy wpisany adres (łącznie z prawdziwym) przechodzi przez ten sam `chrome.permissions.request` przy zapisie w Ustawieniach, bez wyjątków wbudowanych w manifest.
-- Reszta repo czysta: brak e-maili/danych osobowych, brak prawdziwych MAC/IP (same placeholdery), brak `console.log`, brak kluczy/tokenów, brak ścieżek systemowych.
+Stare dane z wersji `legacy-wolphp` (`storage.sync.hosts`, klucze UUID) są czyszczone przy starcie (`migrateLegacyStorage`).
 
-## Status projektu wake-on-lan.php (serwer, upstream)
+## CORS i uprawnienia
 
-Małe, hobbystyczne, mało aktywne repo: pojedynczy plik PHP, ostatnia widoczna zmiana sprzed ok. 4 lat, 13 otwartych issues, 2 zalegające pull requesty, brak CONTRIBUTING.md. Wniosek: rozszerzenie nie powinno zakładać, że serwer się zmieni (np. że ktoś doda nagłówki CORS albo udokumentuje API). Ewentualny PR do tamtego repo (nagłówki CORS, README z opisem API) to zadanie "na kiedyś", nie coś na czym warto polegać w krótkim terminie — stąd decyzje projektowe tego rozszerzenia (bez zależności od CONFIG.SET, tolerancyjny parser błędów) zakładają serwer dokładnie w obecnym, nieudokumentowanym stanie.
+Serwer nie wysyła nagłówków CORS. Rozszerzenie działa mimo to, bo origin serwera dostaje uprawnienie hosta (`optional_host_permissions` + `chrome.permissions.request` przy zapisie adresu), a konteksty rozszerzenia z takim uprawnieniem są zwolnione z CORS — nie "naprawiać" tego `no-cors` ani proxy. Natywne okno zgody zamyka popup (utrata fokusu), dlatego prośba o zgodę idzie przez osobną kartę ([grant-permission.html](grant-permission.html)).
+
+Wzorzec uprawnienia zawiera port (`http://host:5000/*`) — do potwierdzenia w prawdziwym Chrome przy pierwszym teście.
+
+## Dostępność tylko przez VPN/LAN
+
+Z poziomu `fetch()` nie da się odróżnić "poza siecią" od "serwer padł" (ten sam błąd sieciowy). Komunikat dla `network` podpowiada VPN jako najczęstszą przyczynę, bez twierdzenia, że to pewne.
+
+## Adres serwera nie trafia do repo
+
+Rzeczywisty adres serwera jest wewnętrzny, a gptwol bywa bez autentykacji — nie wpisujemy go do żadnego śledzonego pliku (ani `manifest.json`, ani kodu, ani notatek). Pole adresu jest puste przy pierwszym uruchomieniu; użytkownik wpisuje własny. Brak statycznego `host_permissions` — każdy adres przechodzi przez ten sam `chrome.permissions.request`.
+
+## Backlog
+
+- **Faza 2 (hosty z poziomu rozszerzenia):** dodawanie/edycja/usuwanie komputerów (`POST /add_computer`, `/edit_computer`, `/delete_computer`) i skan ARP (`GET /arp_scan`, jedyny endpoint JSON). Cron świadomie pominięty (konfiguracja pasuje do panelu, nie do popupu).
+- **Logowanie (`ENABLE_LOGIN`):** dziś wykrywamy przekierowanie na `/login` i pokazujemy czytelny błąd (`auth_required`). Obsługa sesji (`POST /login`) do zrobienia; trzeba zweryfikować, czy ciasteczka sesji są wysyłane z kontekstu rozszerzenia (instancja zespołu ma logowanie wyłączone, więc nie da się tego sprawdzić na niej). OIDC wymaga przekierowań — dla takich instancji sensowne jest tylko otwarcie panelu w karcie.
+- **Odporność parsera:** parsowanie HTML jest kruche między wersjami gptwol. Przy publikacji zapisać w README wersję, z którą testowano; błąd `bad_format` mówi o niezgodności formatu.
+
+## Pod publikację (Chrome Web Store)
+
+- Szeroki `optional_host_permissions` (`http://*/*`, `https://*/*`) jest nieunikniony (adres serwera dowolny) — przy review zwykle wymaga uzasadnienia i może je wydłużyć.
+- W opisie zaznaczyć, że to nieoficjalne rozszerzenie niezwiązane z autorem gptwol.
+- Dopisać README (instalacja, wymagania: działający gptwol, uprawnienia, ograniczenia: brak logowania/OIDC).
+
+## Status upstream: gptwol
+
+Aktywne repo (MIT, ostatnie zmiany 2026, kilkaset gwiazdek, obraz Dockera). To zmniejsza ryzyko zmiany kontraktu w porównaniu ze starym serwerem, ale kontrakt dalej jest nieudokumentowany — stąd cały dostęp w jednym module i jawny błąd `bad_format`.

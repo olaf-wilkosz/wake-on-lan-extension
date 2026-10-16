@@ -648,3 +648,40 @@ input[type="number"]::-webkit-outer-spin-button {
   transition: height 0.22s ease;
   overflow: hidden;
 }
+
+/* --- Uśpienie (Sleep-on-LAN): czerwony odpowiednik "Wybudź", jak w panelu gptwol --- */
+.btn-sleep-big {
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  background: linear-gradient(135deg, #ef7b74, #c62828);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(198, 40, 40, 0.35);
+}
+.btn-sleep-big:hover:not(:disabled) { filter: brightness(1.06); }
+
+.btn-sleep-small {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+.btn-sleep-small:hover:not(:disabled) { background: var(--danger-bg-hover); }
+
+.confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.confirm-text {
+  flex: 1 1 100%;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.confirm-row .btn { flex: 1; padding: 9px 12px; font-size: 13px; }
+
+@media (prefers-color-scheme: dark) {
+  .btn-sleep-big { background: linear-gradient(135deg, #f49b95, #d24a44); }
+}
