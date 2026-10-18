@@ -1,0 +1,15 @@
+{
+  "name": "wake-on-lan-extension",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rozszerzenie Chrome (Manifest V3) do wybudzania i usypiania komputerów przez serwer gptwol. Ten plik służy tylko do uruchamiania testów — rozszerzenie nie ma etapu budowania ani zależności.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:api": "node --test test/api.test.js",
+    "screenshots": "node test/support/screenshots.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
