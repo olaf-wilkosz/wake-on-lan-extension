@@ -1,17 +1,17 @@
-# Notatki / backlog
+# Notatki projektowe
 
-Kontekst i ustalenia, spisane żeby nie trzeba było ich odkrywać ponownie.
+Dokumentacja dla osób rozwijających rozszerzenie: kontrakt z serwerem, decyzje architektoniczne i backlog. Instrukcja dla użytkownika jest w [README](../README.md).
 
 ## Układ gałęzi
 
 - `main` — rozszerzenie pod **gptwol** ([Misterbabou/gptwol](https://github.com/Misterbabou/gptwol)), aktualny kierunek.
-- `legacy-wolphp` — zamrożona wersja pod stary serwer AndiSHFR/wake-on-lan.php (zespół z niego zrezygnował, upstream nieaktywny od ok. 4 lat). Nie rozwijamy; gdyby kiedyś były dwa projekty, to stąd.
+- `legacy-wolphp` — zamrożona wersja pod stary serwer [AndiSHFR/wake-on-lan.php](https://github.com/AndiSHFR/wake-on-lan.php) (upstream nieaktywny od ok. 4 lat, zespół z niego zrezygnował). Z niej powstał obecny interfejs; zmieniono głównie backend. Nie rozwijana — zostaje jako zamknięty etap, a gdyby kiedyś były dwa projekty, to stąd.
 
-Priorytet: usprawnienie pracy własnej i zespołu. Publikacja w Chrome Web Store jest możliwym celem na później — patrz "Pod publikację".
+Priorytet: usprawnienie pracy własnej i zespołu. Publikacja w Chrome Web Store jest możliwym celem na później — patrz "Pod publikację w sklepie".
 
 ## Kontrakt gptwol (nieoficjalny)
 
-gptwol nie ma udokumentowanego API ani endpointu JSON. Poniższe wynika z czytania jego kodu (`app/wol.py`, `app/templates/wol_form.html`) i może się zmienić przy aktualizacji serwera. Całość jest w jednym miejscu: [shared/api.js](shared/api.js).
+gptwol nie ma udokumentowanego API ani endpointu JSON. Poniższe wynika z czytania jego kodu (`app/wol.py`, `app/templates/wol_form.html`) i może się zmienić przy aktualizacji serwera. Całość jest w jednym miejscu: [shared/api.js](../shared/api.js).
 
 | Operacja | Wywołanie | Odpowiedź |
 |---|---|---|
@@ -30,7 +30,7 @@ Serwer sam sprawdza, czy host działa, i jeśli tak, wysyła **Sleep-on-LAN (wy�
 - Zostaje wąski wyścig między naszym sprawdzeniem a sprawdzeniem serwera. Dlatego po wysłaniu parsujemy odpowiedź i raportujemy to, co serwer FAKTYCZNIE zrobił (a nie to, co zamierzaliśmy).
 - Sam panel gptwol robi to samo (przycisk zielony "Wake" / czerwony "Sleep" zależnie od statusu).
 
-Przetestowane: parser i status na żywym serwerze (tylko odczyt), cała logika przełącznika i UI na atrapie serwera. Ścieżki wysyłającej na prawdziwym serwerze celowo NIE testowano automatycznie (wybudziłaby albo wyłączyła realną maszynę).
+Testy (`npm test`): logika przełącznika i parser na atrapie serwera oraz scenariusze UI w headless Chrome (patrz sekcja "Testy"). Ścieżki wysyłającej na prawdziwym serwerze celowo NIE testujemy automatycznie — wybudziłaby albo wyłączyła realną maszynę.
 
 ## Model danych
 
@@ -40,7 +40,7 @@ Stare dane z wersji `legacy-wolphp` (`storage.sync.hosts`, klucze UUID) są czys
 
 ## CORS i uprawnienia
 
-Serwer nie wysyła nagłówków CORS. Rozszerzenie działa mimo to, bo origin serwera dostaje uprawnienie hosta (`optional_host_permissions` + `chrome.permissions.request` przy zapisie adresu), a konteksty rozszerzenia z takim uprawnieniem są zwolnione z CORS — nie "naprawiać" tego `no-cors` ani proxy. Natywne okno zgody zamyka popup (utrata fokusu), dlatego prośba o zgodę idzie przez osobną kartę ([grant-permission.html](grant-permission.html)).
+Serwer nie wysyła nagłówków CORS. Rozszerzenie działa mimo to, bo origin serwera dostaje uprawnienie hosta (`optional_host_permissions` + `chrome.permissions.request` przy zapisie adresu), a konteksty rozszerzenia z takim uprawnieniem są zwolnione z CORS — nie "naprawiać" tego `no-cors` ani proxy. Natywne okno zgody zamyka popup (utrata fokusu), dlatego prośba o zgodę idzie przez osobną kartę ([grant-permission.html](../grant-permission.html)).
 
 Wzorzec uprawnienia zawiera port (`http://host:5000/*`) — do potwierdzenia w prawdziwym Chrome przy pierwszym teście.
 
@@ -55,14 +55,23 @@ Rzeczywisty adres serwera jest wewnętrzny, a gptwol bywa bez autentykacji — n
 ## Backlog
 
 - **Faza 2 (hosty z poziomu rozszerzenia):** dodawanie/edycja/usuwanie komputerów (`POST /add_computer`, `/edit_computer`, `/delete_computer`) i skan ARP (`GET /arp_scan`, jedyny endpoint JSON). Cron świadomie pominięty (konfiguracja pasuje do panelu, nie do popupu).
-- **Logowanie (`ENABLE_LOGIN`):** dziś wykrywamy przekierowanie na `/login` i pokazujemy czytelny błąd (`auth_required`). Obsługa sesji (`POST /login`) do zrobienia; trzeba zweryfikować, czy ciasteczka sesji są wysyłane z kontekstu rozszerzenia (instancja zespołu ma logowanie wyłączone, więc nie da się tego sprawdzić na niej). OIDC wymaga przekierowań — dla takich instancji sensowne jest tylko otwarcie panelu w karcie.
+- **Logowanie (`ENABLE_LOGIN`):** dziś wykrywamy przekierowanie na `/login` i pokazujemy czytelny błąd (`auth_required`). Obsługa sesji (`POST /login`) do zrobienia; trzeba zweryfikować na instancji z włączonym `ENABLE_LOGIN`, czy ciasteczka sesji są wysyłane z kontekstu rozszerzenia. OIDC wymaga przekierowań — dla takich instancji sensowne jest tylko otwarcie panelu w karcie.
 - **Odporność parsera:** parsowanie HTML jest kruche między wersjami gptwol. Przy publikacji zapisać w README wersję, z którą testowano; błąd `bad_format` mówi o niezgodności formatu.
 
-## Pod publikację (Chrome Web Store)
+## Pod publikację w sklepie (Chrome Web Store)
 
 - Szeroki `optional_host_permissions` (`http://*/*`, `https://*/*`) jest nieunikniony (adres serwera dowolny) — przy review zwykle wymaga uzasadnienia i może je wydłużyć.
 - W opisie zaznaczyć, że to nieoficjalne rozszerzenie niezwiązane z autorem gptwol.
-- Dopisać README (instalacja, wymagania: działający gptwol, uprawnienia, ograniczenia: brak logowania/OIDC).
+- Przygotować materiały sklepu (opis, zrzuty ekranu, polityka prywatności — rozszerzenie nie zbiera żadnych danych, wszystko zostaje w profilu przeglądarki i na wskazanym serwerze).
+
+## Testy
+
+`npm test` (Node >= 22, bez zależności):
+- `test/api.test.js` — klient API na atrapie serwera gptwol: parser (w tym encje HTML), status, logika przełącznika (odmowa gdy wysłanie dałoby odwrotny skutek, wyścig, nieznany MAC), logowanie, obca strona, timeout.
+- `test/ui.test.js` — prawdziwy `popup.js` + `background.js` + `shared/api.js` z atrapą `chrome.*` i atrapą serwera w headless Chrome; asercje na DOM i na liczbie wysłanych pakietów. Pomijany, gdy nie ma Chrome (ustaw `CHROME_PATH`).
+- `npm run screenshots` regeneruje zrzuty do README (`docs/img`).
+
+Nigdy nie kieruj testów na prawdziwy serwer ze ścieżką `POST /wol_or_sol_send`.
 
 ## Status upstream: gptwol
 

@@ -1,0 +1,11 @@
+# lokalne ustawienia narzędzi (Claude Code itp.) -- nie do repo
+.claude/
+
+# systemowe/edytorowe
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+
+# zależności (rozszerzenie ich nie ma, ale na wszelki wypadek)
+node_modules/
