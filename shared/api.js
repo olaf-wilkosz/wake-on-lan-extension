@@ -159,7 +159,9 @@ var WolApi = (function () {
     if (!result || result.ok) return '';
     switch (result.kind) {
       case 'timeout':
-        return 'Serwer nie odpowiada (przekroczono czas oczekiwania).';
+        // Bez VPN pakiety do adresu prywatnego są po prostu gubione, więc to właśnie timeout (a nie
+        // natychmiastowy błąd sieci) jest typowym objawem jego braku.
+        return 'Serwer nie odpowiada (przekroczono czas oczekiwania). Jeśli serwer jest dostępny tylko przez VPN, sprawdź, czy jesteś połączony.';
       case 'network':
         return 'Brak połączenia z serwerem. Jeśli serwer jest dostępny tylko przez VPN, upewnij się, że jesteś podłączony -- to najczęstsza przyczyna tego błędu.';
       case 'http_error':

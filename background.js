@@ -60,6 +60,7 @@ function setBadge(state) {
 }
 
 var ERROR_LOG_MAX = 50;
+var EXPECTED_OFFLINE_KINDS = { network: true, timeout: true };
 
 function logError(context, result) {
   // chrome://extensions -> Błędy pokazuje tylko spłaszczony string ("[object Object]" dla
@@ -67,9 +68,11 @@ function logError(context, result) {
   // otwarciu prawdziwego DevTools, więc dorzucamy JSON obok, żeby przyczyna była czytelna.
   var detail;
   try { detail = JSON.stringify(result); } catch (e) { detail = String(result); }
-  console.error('[Wake on LAN] ' + context + ': ' + detail);
-
   var kind = (result && result.kind) || 'unknown';
+  // Brak sieci/VPN to stan oczekiwany, a nie błąd rozszerzenia -- jako console.error zalewałby
+  // chrome://extensions -> Błędy przy każdym sprawdzeniu w tle. Trafia za to do naszego dziennika.
+  (EXPECTED_OFFLINE_KINDS[kind] ? console.info : console.error)('[Wake on LAN] ' + context + ': ' + detail);
+
   var raw = '';
   if (result) {
     if (result.status) raw = 'HTTP ' + result.status + (result.message ? ': ' + result.message : '');
@@ -84,13 +87,30 @@ function logError(context, result) {
   });
 }
 
+// Zapisy do dziennika idą jeden po drugim (get+set nie jest atomowe, a błędy z listy hostów i ze
+// statusu potrafią nadejść jednocześnie). To samo zdarzenie (kontekst + rodzaj + szczegóły) nie
+// tworzy nowego wpisu, tylko podbija licznik i czas -- inaczej kilka godzin bez VPN wypełniłoby
+// dziennik (limit 50) jednym powtarzanym błędem i wypchnęło z niego wszystko inne.
+var errorLogQueue = Promise.resolve();
+
 function appendErrorLog(entry) {
-  chrome.storage.local.get({ errorLog: [] }).then(function (r) {
-    var log = r.errorLog;
-    log.unshift(entry);
-    if (log.length > ERROR_LOG_MAX) log = log.slice(0, ERROR_LOG_MAX);
-    chrome.storage.local.set({ errorLog: log });
-  });
+  errorLogQueue = errorLogQueue.then(function () {
+    return chrome.storage.local.get({ errorLog: [] }).then(function (r) {
+      var log = r.errorLog;
+      var idx = -1;
+      for (var i = 0; i < log.length; i++) {
+        if (log[i].context === entry.context && log[i].kind === entry.kind && log[i].raw === entry.raw) { idx = i; break; }
+      }
+      if (idx !== -1) {
+        entry.count = (log[idx].count || 1) + 1;
+        log.splice(idx, 1);
+      }
+      log.unshift(entry);
+      if (log.length > ERROR_LOG_MAX) log = log.slice(0, ERROR_LOG_MAX);
+      return chrome.storage.local.set({ errorLog: log });
+    });
+  }).catch(function () { /* dziennik nie może zepsuć właściwej operacji */ });
+  return errorLogQueue;
 }
 
 function findHost(hosts, hostId) {

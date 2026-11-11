@@ -529,7 +529,7 @@
       time.textContent = formatLogTimestamp(entry.ts);
       var kind = document.createElement('span');
       kind.className = 'error-log-kind';
-      kind.textContent = errorKindLabel(entry.kind);
+      kind.textContent = errorKindLabel(entry.kind) + (entry.count > 1 ? ' ×' + entry.count : '');
       head.appendChild(time);
       head.appendChild(kind);
       li.appendChild(head);

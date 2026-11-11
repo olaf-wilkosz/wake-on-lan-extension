@@ -86,12 +86,12 @@ Usypianie działa tylko na komputerach ze skonfigurowanym [Sleep-on-LAN](https:/
 
 ## Rozwiązywanie problemów
 
-Wszystkie błędy trafiają do **Ustawienia → Logi błędów**.
+Wszystkie błędy trafiają do **Ustawienia → Logi błędów**. Powtarzający się błąd (np. kilka godzin bez VPN) jest jednym wpisem z licznikiem, np. `TIMEOUT ×48`. Brak sieci/VPN nie jest zgłaszany jako błąd rozszerzenia na stronie `chrome://extensions`.
 
 | Kod | Zwykle znaczy |
 |---|---|
 | `NETWORK_ERROR` | serwer nieosiągalny — najczęściej brak połączenia z VPN/siecią, zły adres lub port |
-| `TIMEOUT` | serwer nie odpowiada na czas |
+| `TIMEOUT` | serwer nie odpowiada na czas — bez VPN to typowy objaw (pakiety do adresu prywatnego są gubione, a nie odrzucane) |
 | `HTTP_ERROR` (500 przy wybudzaniu) | host nie jest dodany w panelu serwera |
 | `BAD_FORMAT` | odpowiedź nie wygląda jak gptwol (zły adres albo zmieniony format po aktualizacji) |
 | `AUTH_REQUIRED` | serwer wymaga logowania, którego rozszerzenie nie obsługuje |
